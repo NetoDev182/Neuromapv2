@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TRRS Turma - Analisador Semiótico</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+
+        :root {
+            --bg-deep: #0a0514;
+            --glass: rgba(25, 20, 40, 0.8);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --cyan: #00ffcc;
+            --text: #ffffff;
+            --insuficiente: #ff4d4d;
+            --regular: #ffcc00;
+            --bom: #00ff88;
+            --otimo: #3399ff;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: radial-gradient(circle at top right, #1a0b3a 0%, #0a0514 100%);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            gap: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        /* Sidebar Alunos */
+        .sidebar {
+            background: var(--glass);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            padding: 20px;
+            border: 1px solid var(--glass-border);
+            height: fit-content;
+        }
+
+        .student-list { list-style: none; margin-top: 15px; }
+        .student-item {
+            padding: 12px 15px;
+            margin-bottom: 8px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: 0.3s;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid transparent;
+        }
+        .student-item:hover { background: rgba(0, 255, 204, 0.1); }
+        .student-item.active {
+            background: rgba(0, 255, 204, 0.2);
+            border-color: var(--cyan);
+            font-weight: 600;
+        }
+
+        /* Painel Principal */
+        .main-panel { display: flex; flex-direction: column; gap: 20px; }
+
+        .glass-card {
+            background: var(--glass);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            padding: 24px;
+            border: 1px solid var(--glass-border);
+        }
+
+        .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+
+        /* Mapa de Calor */
+        .heatmap-container { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 0.85rem; }
+        th { text-align: left; padding: 10px; color: rgba(255,255,255,0.5); }
+        td { padding: 10px; border: 1px solid rgba(255,255,255,0.05); }
+
+        .heat-cell {
+            width: 40px; text-align: center; font-weight: bold; border-radius: 4px;
+        }
+
+        .badge {
+            font-size: 0.7rem; padding: 2px 8px; border-radius: 10px; text-transform: uppercase; font-weight: 700;
+        }
+
+        .chart-box { height: 300px; position: relative; }
+
+        /* Mobile */
+        @media (max-width: 1000px) {
+            .layout { grid-template-columns: 1fr; }
+            .stats-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="layout">
+    <aside class="sidebar">
+        <h3>Alunos (Turma A)</h3>
+        <ul class="student-list" id="studentList"></ul>
+    </aside>
+
+    <main class="main-panel">
+        <div class="stats-grid">
+            <div class="glass-card">
+                <h2 id="currentStudentName">Selecionar Aluno</h2>
+                <div id="individualControls" style="margin-top:20px">
+                    </div>
+            </div>
+
+            <div class="glass-card">
+                <div class="chart-box">
+                    <canvas id="trrsChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="glass-card heatmap-container">
+            <h3>Mapa de Calor da Turma (Overview)</h3>
+            <table id="heatmapTable">
+                <thead>
+                    <tr>
+                        <th>Aluno</th>
+                        <th>Assimilação</th>
+                        <th>Tratamento</th>
+                        <th>Conversão</th>
+                        <th>Relações</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="heatmapBody"></tbody>
+            </table>
+        </div>
+    </main>
+</div>
+
+<script>
+    // 1. Dados dos 10 Alunos (Nomes inventados e notas variadas)
+    const students = [
+        { name: "Lucas Silva", scores: [4, 4, 2, 2] },   // Gargalo em conversão
+        { name: "Maria Oliveira", scores: [3, 3, 3, 3] }, // Equilibrada Regular
+        { name: "Enzo Santos", scores: [1, 2, 1, 1] },   // Insuficiente
+        { name: "Valentina Luz", scores: [4, 4, 4, 4] },  // Ótimo (Noésis)
+        { name: "Gabriel Souza", scores: [3, 4, 2, 2] },  // Bom em cálculo, ruim em tradução
+        { name: "Beatriz Costa", scores: [4, 3, 4, 3] },  // Boa em conversão
+        { name: "Rafael Mello", scores: [2, 2, 3, 2] },   // Melhor em conversão que tratamento
+        { name: "Sofia Rocha", scores: [4, 4, 4, 3] },   // Quase mestre
+        { name: "Thiago Lima", scores: [2, 3, 2, 1] },   // Dificuldade em relações
+        { name: "Helena Matos", scores: [3, 2, 3, 3] }   // Regular produtivo
+    ];
+
+    let currentIdx = 0;
+    let chart;
+
+    const levels = {
+        1: { text: 'Insuficiente', color: '#ff4d4d' },
+        2: { text: 'Regular', color: '#ffcc00' },
+        3: { text: 'Bom', color: '#00ff88' },
+        4: { text: 'Ótimo', color: '#3399ff' }
+    };
+
+    function init() {
+        renderStudentList();
+        renderHeatmap();
+        setupChart();
+        selectStudent(0);
+    }
+
+    function renderStudentList() {
+        const list = document.getElementById('studentList');
+        students.forEach((s, i) => {
+            const li = document.createElement('li');
+            li.className = 'student-item';
+            li.innerText = s.name;
+            li.onclick = () => selectStudent(i);
+            li.id = `std-${i}`;
+            list.appendChild(li);
+        });
+    }
+
+    function renderHeatmap() {
+        const body = document.getElementById('heatmapBody');
+        body.innerHTML = '';
+        students.forEach(s => {
+            const media = s.scores.reduce((a,b)=>a+b, 0)/4;
+            const status = levels[Math.round(media)];
+            
+            body.innerHTML += `
+                <tr>
+                    <td>${s.name}</td>
+                    ${s.scores.map(v => `<td style="background:${levels[v].color}22; color:${levels[v].color}; text-align:center; font-weight:bold">${v}</td>`).join('')}
+                    <td><span class="badge" style="color:${status.color}; border: 1px solid ${status.color}">${status.text}</span></td>
+                </tr>
+            `;
+        });
+    }
+
+    function setupChart() {
+        const ctx = document.getElementById('trrsChart').getContext('2d');
+        chart = new Chart(ctx, {
+            type: 'radar',
+            data: {
+                labels: ['Assimil.', 'Tratam.', 'Conver.', 'Relac.'],
+                datasets: [{
+                    data: [0,0,0,0],
+                    borderWidth: 2,
+                    borderColor: 'rgba(255,255,255,0.8)',
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                scales: { r: { min: 0, max: 4, ticks: { display: false }, grid: { color: 'rgba(255,255,255,0.05)' }, angleLines: { color: 'rgba(255,255,255,0.1)' } } },
+                plugins: { legend: { display: false } }
+            },
+            plugins: [{
+                beforeDatasetsDraw(chart) {
+                    const { ctx, chartArea } = chart;
+                    const x = (chartArea.left + chartArea.right) / 2;
+                    const y = (chartArea.top + chartArea.bottom) / 2;
+                    const radius = Math.min((chartArea.right - chartArea.left) / 2, (chartArea.bottom - chartArea.top) / 2);
+                    const grad = ctx.createRadialGradient(x, y, 0, x, y, radius);
+                    grad.addColorStop(0, 'rgba(255, 77, 77, 0.5)'); // Centro Vermelho
+                    grad.addColorStop(0.7, 'rgba(0, 255, 204, 0.2)'); // Meio Verde
+                    grad.addColorStop(1, 'rgba(51, 153, 255, 0.4)'); // Borda Azul
+                    chart.data.datasets[0].backgroundColor = grad;
+                }
+            }]
+        });
+    }
+
+    function selectStudent(index) {
+        currentIdx = index;
+        const s = students[index];
+        
+        // UI Updates
+        document.querySelectorAll('.student-item').forEach(el => el.classList.remove('active'));
+        document.getElementById(`std-${index}`).classList.add('active');
+        document.getElementById('currentStudentName').innerText = s.name;
+        
+        // Render Sliders
+        const controls = document.getElementById('individualControls');
+        controls.innerHTML = '';
+        const labels = ['Assimilação', 'Tratamento', 'Conversão', 'Relações'];
+        
+        s.scores.forEach((score, i) => {
+            controls.innerHTML += `
+                <div style="margin-bottom:15px">
+                    <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:5px">
+                        <span>${labels[i]}</span>
+                        <span style="color:${levels[score].color}">${levels[score].text}</span>
+                    </div>
+                    <input type="range" min="1" max="4" value="${score}" style="width:100%" oninput="updateScore(${i}, this.value)">
+                </div>
+            `;
+        });
+
+        chart.data.datasets[0].data = s.scores;
+        chart.update();
+    }
+
+    function updateScore(catIdx, value) {
+        students[currentIdx].scores[catIdx] = parseInt(value);
+        chart.data.datasets[0].data = students[currentIdx].scores;
+        chart.update();
+        renderHeatmap(); // Atualiza o mapa de calor em tempo real
+        
+        // Atualiza o texto do badge no slider
+        selectStudent(currentIdx); 
+    }
+
+    init();
+</script>
+</body>
+</html>
